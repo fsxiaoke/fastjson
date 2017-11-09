@@ -275,8 +275,8 @@ class JavaBeanInfo {
         final Field[] declaredFields = clazz.getDeclaredFields();
 
         boolean isInterfaceOrAbstract = clazz.isInterface() || (classModifiers & Modifier.ABSTRACT) != 0;
-
-        if (defaultConstructor == null || isInterfaceOrAbstract) {
+//        if (defaultConstructor == null || isInterfaceOrAbstract) {
+        if (!isInterfaceOrAbstract) {  //查找含有JSONCreator的构造方法（之前如果有默认构造方法就不去查找） xiongtj修改
             creatorConstructor = null;
             for (Constructor<?> constructor : constructors) {
                 JSONCreator annotation = constructor.getAnnotation(JSONCreator.class);
@@ -755,7 +755,19 @@ class JavaBeanInfo {
         Arrays.sort(sortedFields);
 
         jsonType = jsonTypeSupport ? clazz.getAnnotation(JSONType.class) : null;
-        return new JavaBeanInfo(clazz, defaultConstructor, creatorConstructor, factoryMethod, fields
-                , sortedFields, jsonType, creatorConstructorParameters);
+
+//        return new JavaBeanInfo(clazz, defaultConstructor, creatorConstructor, factoryMethod, fields
+//                , sortedFields, jsonType, creatorConstructorParameters);
+        if (creatorConstructor != null) {
+            return new JavaBeanInfo(clazz, null, creatorConstructor, null, fields
+                    , sortedFields, jsonType, creatorConstructorParameters);
+        }else if(factoryMethod != null){
+            return new JavaBeanInfo(clazz, null, null, factoryMethod, fields
+                    , sortedFields, jsonType, creatorConstructorParameters);
+        }else{
+            return new JavaBeanInfo(clazz, defaultConstructor, null, null, fields
+                    , sortedFields, jsonType, creatorConstructorParameters);
+        }
+
     }
 }
