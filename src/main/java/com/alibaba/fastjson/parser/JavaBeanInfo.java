@@ -496,7 +496,9 @@ class JavaBeanInfo {
                         throw new JSONException("default constructor not found. " + clazz);
                     }
                 } else {
-                    throw new JSONException("default constructor not found. " + clazz);
+                    if(defaultConstructor==null) {//xiongtj 没有默认构造抛出异常
+                        throw new JSONException("default constructor not found. " + clazz);
+                    }
                 }
             }
         }
