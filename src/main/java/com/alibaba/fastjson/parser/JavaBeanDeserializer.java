@@ -9,11 +9,7 @@ import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONException;
 import com.alibaba.fastjson.JSONObject;
 import com.alibaba.fastjson.parser.DefaultJSONParser.ResolveTask;
-import com.alibaba.fastjson.parser.deserializer.ExtraProcessable;
-import com.alibaba.fastjson.parser.deserializer.ExtraProcessor;
-import com.alibaba.fastjson.parser.deserializer.ExtraTypeProvider;
-import com.alibaba.fastjson.parser.deserializer.FieldDeserializer;
-import com.alibaba.fastjson.parser.deserializer.ObjectDeserializer;
+import com.alibaba.fastjson.parser.deserializer.*;
 import com.alibaba.fastjson.util.FieldInfo;
 import com.alibaba.fastjson.util.TypeUtils;
 
@@ -112,8 +108,16 @@ public class JavaBeanDeserializer implements ObjectDeserializer {
         return object;
     }
 
+
     public <T> T deserialze(DefaultJSONParser parser, Type type, Object fieldName) {
-        return deserialze(parser, type, fieldName, null);
+        T obj=  deserialze(parser, type, fieldName, null);
+        if(obj!=null&&obj instanceof JavaBeanDeserializerListener){
+            //xiongtj 增加反序列化成功回调
+            JavaBeanDeserializerListener listener= (JavaBeanDeserializerListener) obj;
+            listener.onDeserializerSuccess();
+        }
+
+        return obj;
     }
 
     @SuppressWarnings({ "unchecked", "rawtypes" })

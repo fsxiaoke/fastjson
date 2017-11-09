@@ -629,6 +629,14 @@ class JavaBeanInfo {
                 if ((modifiers & Modifier.STATIC) != 0) {
                     continue;
                 }
+
+                //xiongtj 修改属性deserialize 失效问题
+                JSONField annotation = jsonFieldSupport ? f.getAnnotation(JSONField.class) : null;
+                if (annotation != null) {
+                    if (!annotation.deserialize()) {
+                        continue;
+                    }
+                }
                 
                 if((modifiers & Modifier.FINAL) != 0) {
                     Class<?> fieldType = f.getType();

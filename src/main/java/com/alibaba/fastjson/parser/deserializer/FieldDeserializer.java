@@ -119,7 +119,10 @@ public abstract class FieldDeserializer {
                         }
                     }
                 } else {
-                    field.set(object, value);
+                    //xiongtj 增加空判断
+                    if(value!=null&&object!=null) {
+                        field.set(object, value);
+                    }
                 }
             } else {
                 if (fieldInfo.getOnly) {
@@ -135,7 +138,10 @@ public abstract class FieldDeserializer {
                         }
                     }
                 } else {
-                    method.invoke(object, value);
+                    //xiongtj 增加空判断
+                    if(value!=null&&object!=null) {
+                        method.invoke(object, value);
+                    }
                 }
             }
         } catch (Exception e) {
