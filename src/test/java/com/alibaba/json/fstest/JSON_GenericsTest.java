@@ -73,4 +73,22 @@ public class JSON_GenericsTest extends TestCase {
         FieldEmpty empty=JSON.parseObject("{\"age\":null,\"a\":null}",FieldEmpty.class);
         Assert.assertNotNull(empty);
     }
+
+    /**
+     *  当进行toJSONString的时候，默认如果重用对象的话，会使用引用的方式进行引用对象。
+     *
+     * @throws Exception
+     */
+    public void test_create_8() throws Exception {
+        Child c1 = new Child(99);
+        Child c2 = new Child(66);
+        FieldRef ref = new FieldRef();
+        FieldRef2 ref2 = new FieldRef2();
+        ref.ref2=ref2;
+        ref.child1=c1;
+        ref.child2=c1;
+        ref2.child=c1;
+        String result = JSON.toJSONString(ref);
+        Assert.assertNotNull(result);
+    }
 }

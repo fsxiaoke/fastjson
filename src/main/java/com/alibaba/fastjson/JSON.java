@@ -79,6 +79,7 @@ public abstract class JSON implements JSONStreamAware, JSONAware {
         features |= SerializerFeature.SkipTransientField.mask;
         features |= SerializerFeature.WriteEnumUsingToString.mask;
         features |= SerializerFeature.SortField.mask;
+        features |= SerializerFeature.DisableCircularReferenceDetect.mask;//xiongtj   当进行toJSONString的时候，默认如果重用对象的话，会使用引用的方式进行引用对象。
         // features |=
         // com.alibaba.fastjson.serializer.SerializerFeature.WriteSlashAsSpecial.getMask();
         DEFAULT_GENERATE_FEATURE = features;
