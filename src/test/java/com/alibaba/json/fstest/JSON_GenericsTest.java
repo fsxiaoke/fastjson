@@ -27,7 +27,7 @@ public class JSON_GenericsTest extends TestCase {
      */
     public void test_create_3() throws Exception {
         Child child=JSON.parseObject("{\"name\":\"lili\",\"age\":18}",Child.class);
-        Assert.assertNotNull(child.name);
+        Assert.assertNotNull(child);
     }
 
 
@@ -90,5 +90,14 @@ public class JSON_GenericsTest extends TestCase {
         ref2.child=c1;
         String result = JSON.toJSONString(ref);
         Assert.assertNotNull(result);
+    }
+
+    /**
+     * 修改只有public属性可以反序列化
+     * @throws Exception
+     */
+    public void test_create_9() throws Exception {
+        Child parent=JSON.parseObject("{\"name\":\"lili\"}",Child.class);
+        Assert.assertNotNull(parent);
     }
 }

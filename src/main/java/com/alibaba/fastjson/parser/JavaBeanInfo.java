@@ -645,10 +645,11 @@ class JavaBeanInfo {
                         continue;
                     }
                 }
-                
-                if ((f.getModifiers() & Modifier.PUBLIC) != 0) {
-                    classfields.add(f);
-                }
+                 //修改只有public属性可以反序列化
+//                if ((f.getModifiers() & Modifier.PUBLIC) != 0) {
+//                    classfields.add(f);
+//                }
+                classfields.add(f);
             }
             
             for (Class<?> c = clazz.getSuperclass(); c != null && c != Object.class; c = c.getSuperclass()) {
@@ -656,6 +657,14 @@ class JavaBeanInfo {
                     int modifiers = f.getModifiers();
                     if ((modifiers & Modifier.STATIC) != 0) {
                         continue;
+                    }
+
+                    //xiongtj 修改属性deserialize 失效问题
+                    JSONField annotation = jsonFieldSupport ? f.getAnnotation(JSONField.class) : null;
+                    if (annotation != null) {
+                        if (!annotation.deserialize()) {
+                            continue;
+                        }
                     }
                     
                     if((modifiers & Modifier.FINAL) != 0) {
@@ -665,10 +674,11 @@ class JavaBeanInfo {
                             continue;
                         }
                     }
-                    
-                    if ((modifiers & Modifier.PUBLIC) != 0) {
-                        classfields.add(f);
-                    }
+                    //修改只有public属性可以反序列化
+//                    if ((modifiers & Modifier.PUBLIC) != 0) {
+//                        classfields.add(f);
+//                    }
+                    classfields.add(f);
                 }
             }
         }
