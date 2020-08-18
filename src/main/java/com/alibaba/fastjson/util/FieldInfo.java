@@ -41,6 +41,8 @@ public class FieldInfo implements Comparable<FieldInfo> {
 
     public final String[]  alternateNames;
 
+    public final int serialzeFeatures;
+
     public FieldInfo(String name, // 
                      Class<?> declaringClass, // 
                      Class<?> fieldClass, // 
@@ -48,6 +50,10 @@ public class FieldInfo implements Comparable<FieldInfo> {
                      Field field, //
                      int ordinal, // 
                      int serialzeFeatures){
+        if (ordinal < 0) {
+            ordinal = 0;
+        }
+
         this.name = name;
         this.declaringClass = declaringClass;
         this.fieldClass = fieldClass;
@@ -55,6 +61,7 @@ public class FieldInfo implements Comparable<FieldInfo> {
         this.method = null;
         this.field = field;
         this.ordinal = ordinal;
+        this.serialzeFeatures = serialzeFeatures;
         
         isEnum = fieldClass.isEnum() && !JSONAware.class.isAssignableFrom(fieldClass);
         
@@ -93,12 +100,17 @@ public class FieldInfo implements Comparable<FieldInfo> {
                      JSONField methodAnnotation, // 
                      JSONField fieldAnnotation, //
                      boolean fieldGenericSupport){
+        if (ordinal < 0) {
+            ordinal = 0;
+        }
+
         this.name = name;
         this.method = method;
         this.field = field;
         this.ordinal = ordinal;
         this.methodAnnotation = methodAnnotation;
         this.fieldAnnotation = fieldAnnotation;
+        this.serialzeFeatures = serialzeFeatures;
         
         JSONField annotation = getAnnotation();
         String format = null;

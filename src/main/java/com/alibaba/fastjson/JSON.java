@@ -122,16 +122,50 @@ public abstract class JSON implements JSONStreamAware, JSONAware {
     }
 
     public static final JSONObject parseObject(String text, Feature... features) {
-        return (JSONObject) parse(text, features);
-    }
 
-    public static final JSONObject parseObject(String text) {
-        Object obj = parse(text);
+        Object obj = parse(text, features);
         if (obj instanceof JSONObject) {
             return (JSONObject) obj;
         }
 
-        return (JSONObject) JSON.toJSON(obj);
+        JSONObject jsonObject =  (JSONObject) JSON.toJSON(obj);
+        boolean autoTypeSupport = (JSON.DEFAULT_PARSER_FEATURE & Feature.SupportAutoType.mask) != 0;
+        if (!autoTypeSupport) {
+            for (Feature feature : features) {
+                if (feature == Feature.SupportAutoType) {
+                    autoTypeSupport = true;
+                }
+            }
+        }
+
+        if (autoTypeSupport) {
+            jsonObject.put(JSON.DEFAULT_TYPE_KEY, obj.getClass().getName());
+        }
+
+        return jsonObject;
+    }
+
+    public static final JSONObject parseObject(String text) {
+        Object obj = parse(text);
+        if (obj instanceof JSONObject || obj == null) {
+            return (JSONObject) obj;
+        }
+
+        JSONObject jsonObject =  (JSONObject) JSON.toJSON(obj);
+        boolean autoTypeSupport = (JSON.DEFAULT_PARSER_FEATURE & Feature.SupportAutoType.mask) != 0;
+
+        if (autoTypeSupport) {
+            jsonObject.put(JSON.DEFAULT_TYPE_KEY, obj.getClass().getName());
+        }
+
+        return jsonObject;
+    }
+
+    /**
+     * @since 1.1.71.android
+     */
+    public static <T> T parseObject(String input, Type clazz, ParserConfig config, Feature... features) {
+        return parseObject(input, clazz, config, null, DEFAULT_PARSER_FEATURE, features);
     }
 
     @SuppressWarnings("unchecked")
@@ -254,11 +288,21 @@ public abstract class JSON implements JSONStreamAware, JSONAware {
     }
 
     public static final JSONArray parseArray(String text) {
+
+        return parseArray(text, new Feature[0]);
+    }
+
+    public static final JSONArray parseArray(String text, Feature... features) {
         if (text == null) {
             return null;
         }
 
-        DefaultJSONParser parser = new DefaultJSONParser(text, ParserConfig.global);
+        int featuresValue = JSON.DEFAULT_PARSER_FEATURE;
+        for (int i = 0; i < features.length; i++) {
+            featuresValue |= features[i].mask;
+        }
+
+        DefaultJSONParser parser = new DefaultJSONParser(text, ParserConfig.global, featuresValue);
 
         JSONArray array;
 
@@ -271,7 +315,7 @@ public abstract class JSON implements JSONStreamAware, JSONAware {
             array = null;
         } else {
             array = new JSONArray();
-            parser.parseArray(array);
+            parser.parseArray(array, null);
 
             parser.handleResovleTask(array);
         }
@@ -337,6 +381,14 @@ public abstract class JSON implements JSONStreamAware, JSONAware {
      */
     public static Object parse(String text, ParserConfig config) {
         return parse(text, config, DEFAULT_PARSER_FEATURE);
+    }
+
+    public static Object parse(String text, ParserConfig config, Feature... features) {
+        int featuresValue = DEFAULT_PARSER_FEATURE;
+        for (int i = 0; i < features.length; i++) {
+            featuresValue |= features[i].mask;
+        }
+        return parse(text, config, featuresValue);
     }
 
     /**
@@ -421,6 +473,9 @@ public abstract class JSON implements JSONStreamAware, JSONAware {
         return toJSONString(object, SerializeConfig.globalInstance, null, null, 0, features);
     }
 
+    /**
+     * @since 1.2.42 and 1.1.68.android
+     */
     public static final byte[] toJSONBytes(Object object, SerializeConfig config, SerializerFeature... features) {
         SerializeWriter out = new SerializeWriter((Writer)null, JSON.DEFAULT_GENERATE_FEATURE, features);
 
@@ -428,6 +483,68 @@ public abstract class JSON implements JSONStreamAware, JSONAware {
             JSONSerializer serializer = new JSONSerializer(out, config);
             serializer.write(object);
 
+            return out.toBytes("UTF-8");
+        } finally {
+            out.close();
+        }
+    }
+
+    /**
+     * @since 1.2.11 and 1.1.68.android
+     */
+    public static byte[] toJSONBytes(Object object, SerializeConfig config, int defaultFeatures, SerializerFeature... features) {
+        return toJSONBytes(object, config, new SerializeFilter[0], defaultFeatures, features);
+    }
+
+    /**
+     * @since 1.2.42 and 1.1.68.android
+     */
+    public static byte[] toJSONBytes(Object object, SerializeFilter[] filters, SerializerFeature... features) {
+        return toJSONBytes(object, SerializeConfig.globalInstance, filters, DEFAULT_GENERATE_FEATURE, features);
+    }
+
+    /**
+     * @since 1.2.42 and 1.1.68.android
+     */
+    public static byte[] toJSONBytes(Object object, SerializeConfig config, SerializeFilter[] filters, int defaultFeatures, SerializerFeature... features) {
+        SerializeWriter out = new SerializeWriter(null, defaultFeatures, features);
+
+        try {
+            JSONSerializer serializer = new JSONSerializer(out, config);
+
+            if (filters != null) {
+                for (SerializeFilter filter : filters) {
+                    if (filter == null) {
+                        continue;
+                    }
+
+                    if (filter instanceof PropertyPreFilter) {
+                        serializer.getPropertyPreFilters().add((PropertyPreFilter) filter);
+                    }
+
+                    if (filter instanceof NameFilter) {
+                        serializer.getNameFilters().add((NameFilter) filter);
+                    }
+
+                    if (filter instanceof ValueFilter) {
+                        serializer.getValueFilters().add((ValueFilter) filter);
+                    }
+
+                    if (filter instanceof PropertyFilter) {
+                        serializer.getPropertyFilters().add((PropertyFilter) filter);
+                    }
+
+                    if (filter instanceof BeforeFilter) {
+                        serializer.getBeforeFilters().add((BeforeFilter) filter);
+                    }
+
+                    if (filter instanceof AfterFilter) {
+                        serializer.getAfterFilters().add((AfterFilter) filter);
+                    }
+                }
+            }
+
+            serializer.write(object);
             return out.toBytes("UTF-8");
         } finally {
             out.close();
@@ -592,7 +709,11 @@ public abstract class JSON implements JSONStreamAware, JSONAware {
      * @since 1.2.9 back port 1.1.52.android
      */
     public <T> T toJavaObject(Class<T> clazz) {
-        return TypeUtils.cast(this, clazz, ParserConfig.getGlobalInstance());
+        if (clazz == Map.class) {
+            return (T) this;
+        }
+
+        return TypeUtils.cast(this, clazz, ParserConfig.getGlobalInstance(), 0);
     }
     
     /**
@@ -658,5 +779,5 @@ public abstract class JSON implements JSONStreamAware, JSONAware {
         }
     }
 
-    public final static String VERSION = "1.1.65";
+    public final static String VERSION = "1.1.71";
 }

@@ -1,6 +1,9 @@
 package com.alibaba.fastjson.parser;
 
 import java.lang.reflect.*;
+
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -107,8 +110,6 @@ public class JavaBeanDeserializer implements ObjectDeserializer {
 
         return object;
     }
-
-
     public <T> T deserialze(DefaultJSONParser parser, Type type, Object fieldName) {
         T obj=  deserialze(parser, type, fieldName, null);
         if(obj!=null&&obj instanceof JavaBeanDeserializerListener){
@@ -252,7 +253,7 @@ public class JavaBeanDeserializer implements ObjectDeserializer {
                         int ordinal = (int) lexer.scanLongValue();
                         
                         EnumDeserializer enumDeser = (EnumDeserializer) ((DefaultFieldDeserializer) fieldDeser).getFieldValueDeserilizer(parser.config);
-                        value = enumDeser.values[ordinal];
+                        value = enumDeser.ordinalEnums[ordinal];
                     } else {
                         throw new JSONException("illegal enum." + lexer.info());
                     }
@@ -673,7 +674,8 @@ public class JavaBeanDeserializer implements ObjectDeserializer {
                             ObjectDeserializer deserizer = getSeeAlso(parser.config, this.beanInfo, typeName);
                             Class<?> userType = null;
                             if (deserizer == null) {
-                                userType = TypeUtils.loadClass(typeName, parser.config.defaultClassLoader);
+
+                                userType = parser.config.checkAutoType(typeName, clazz, lexer.features);
                                 
                                 Class<?> expectClass = TypeUtils.getClass(type);
                                 if (expectClass == null || 
@@ -690,7 +692,9 @@ public class JavaBeanDeserializer implements ObjectDeserializer {
                                 typedObject = javaBeanDeserializer.deserialze(parser, userType, fieldName, null);
                                 if (typeKey != null) {
                                     FieldDeserializer typeKeyFieldDeser = javaBeanDeserializer.getFieldDeserializer(typeKey);
-                                    typeKeyFieldDeser.setValue(typedObject, typeName);
+                                    if (typeKeyFieldDeser != null) {
+                                        typeKeyFieldDeser.setValue(typedObject, typeName);
+                                    }
                                 }
                             } else {
                                 typedObject = deserizer.deserialze(parser, userType, fieldName);
@@ -1071,7 +1075,79 @@ public class JavaBeanDeserializer implements ObjectDeserializer {
                 } else {
                     Field field = fieldDeser.fieldInfo.field;
                     Type paramType = fieldDeser.fieldInfo.fieldType;
-                    value = TypeUtils.cast(value, paramType, config);
+
+                    if (paramType == boolean.class) {
+                        if (value == Boolean.FALSE) {
+                            field.setBoolean(object, false);
+                            continue;
+                        }
+
+                        if (value == Boolean.TRUE) {
+                            field.setBoolean(object, true);
+                            continue;
+                        }
+                    } else if (paramType == int.class) {
+                        if (value instanceof Number) {
+                            field.setInt(object, ((Number) value).intValue());
+                            continue;
+                        }
+                    } else if (paramType == long.class) {
+                        if (value instanceof Number) {
+                            field.setLong(object, ((Number) value).longValue());
+                            continue;
+                        }
+                    } else if (paramType == float.class) {
+                        if (value instanceof Number) {
+                            field.setFloat(object, ((Number) value).floatValue());
+                            continue;
+                        } else if (value instanceof String) {
+                            String strVal = (String) value;
+                            float floatValue;
+                            if (strVal.length() <= 10) {
+                                floatValue = TypeUtils.parseFloat(strVal);
+                            } else {
+                                floatValue = Float.parseFloat(strVal);
+                            }
+
+                            field.setFloat(object, floatValue);
+                            continue;
+                        }
+                    } else if (paramType == double.class) {
+                        if (value instanceof Number) {
+                            field.setDouble(object, ((Number) value).doubleValue());
+                            continue;
+                        } else if (value instanceof String) {
+                            String strVal = (String) value;
+                            double doubleValue;
+                            if (strVal.length() <= 10) {
+                                doubleValue = TypeUtils.parseDouble(strVal);
+                            } else {
+                                doubleValue = Double.parseDouble(strVal);
+                            }
+
+                            field.setDouble(object, doubleValue);
+                            continue;
+                        }
+                    } else if (value != null && paramType == value.getClass()) {
+                        field.set(object, value);
+                        continue;
+                    }
+
+                    String format = fieldDeser.fieldInfo.format;
+                    if (format != null && paramType == Date.class && value instanceof String) {
+                        try {
+                            value = new SimpleDateFormat(format).parse((String) value);
+                        } catch (ParseException e) {
+                            // skip
+                            value = null;
+                        }
+                    } else {
+                        if (paramType instanceof ParameterizedType) {
+                            value = TypeUtils.cast(value, (ParameterizedType) paramType, config);
+                        } else {
+                            value = TypeUtils.cast(value, paramType, config);
+                        }
+                    }
                     field.set(object, value);
                 }
             }

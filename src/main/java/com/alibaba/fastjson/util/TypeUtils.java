@@ -144,7 +144,12 @@ public class TypeUtils {
             Object kclassImpl = kotlin_kclass_constructor.newInstance(clazz);
             Iterable it = (Iterable) kotlin_kclass_getConstructors.invoke(kclassImpl);
             for (Iterator iterator = it.iterator();iterator.hasNext();iterator.hasNext()) {
-                constructor = iterator.next();
+                Object item = iterator.next();
+                List parameters = (List) kotlin_kfunction_getParameters.invoke(item);
+                if (constructor != null && parameters.size() == 0) {
+                    continue;
+                }
+                constructor = item;
             }
 
             List parameters = (List) kotlin_kfunction_getParameters.invoke(constructor);
@@ -316,8 +321,9 @@ public class TypeUtils {
 
         if (value instanceof String) {
             String strVal = value.toString();
-            if (strVal.length() == 0 //
-                || "null".equals(strVal)) {
+            if(strVal.length() == 0 //
+                    || "null".equals(strVal) //
+                    || "NULL".equals(strVal)){
                 return null;
             }
             
@@ -342,11 +348,17 @@ public class TypeUtils {
 
         long longValue = -1;
 
-        if (value instanceof Number) {
+        if (value instanceof BigDecimal) {
+            BigDecimal decimal = (BigDecimal) value;
+            int scale = decimal.scale();
+            if (scale >= -100 && scale <= 100) {
+                longValue = decimal.longValue();
+            } else {
+                longValue = decimal.longValueExact();
+            }
+        } else if (value instanceof Number) {
             longValue = ((Number) value).longValue();
-        }
-
-        if (value instanceof String) {
+        } else if (value instanceof String) {
             String strVal = (String) value;
 
             if (strVal.indexOf('-') != -1) {
@@ -394,6 +406,16 @@ public class TypeUtils {
             return null;
         }
 
+        if (value instanceof BigDecimal) {
+            BigDecimal decimal = (BigDecimal) value;
+            int scale = decimal.scale();
+            if (scale >= -100 && scale <= 100) {
+                return decimal.longValue();
+            }
+
+            return decimal.longValueExact();
+        }
+
         if (value instanceof Number) {
             return ((Number) value).longValue();
         }
@@ -435,6 +457,17 @@ public class TypeUtils {
             return (Integer) value;
         }
 
+        if (value instanceof BigDecimal) {
+            BigDecimal decimal = (BigDecimal) value;
+
+            int scale = decimal.scale();
+            if (scale >= -100 && scale <= 100) {
+                return decimal.intValue();
+            }
+
+            return decimal.intValueExact();
+        }
+
         if (value instanceof Number) {
             return ((Number) value).intValue();
         }
@@ -473,6 +506,10 @@ public class TypeUtils {
             return (Boolean) value;
         }
 
+        if (value instanceof BigDecimal) {
+            return ((BigDecimal) value).intValueExact() == 1;
+        }
+
         if (value instanceof Number) {
             return ((Number) value).intValue() == 1;
         }
@@ -501,8 +538,12 @@ public class TypeUtils {
         return cast(obj, clazz, ParserConfig.global);
     }
 
-    @SuppressWarnings({ "unchecked", "rawtypes" })
     public static final <T> T cast(Object obj, Class<T> clazz, ParserConfig mapping) {
+        return cast(obj, clazz, mapping, 0);
+    }
+
+    @SuppressWarnings({ "unchecked", "rawtypes" })
+    public static final <T> T cast(Object obj, Class<T> clazz, ParserConfig mapping, int features) {
         if (obj == null) {
             return null;
         }
@@ -525,7 +566,7 @@ public class TypeUtils {
                 return (T) obj;
             }
 
-            return castToJavaBean((Map<String, Object>) obj, clazz, mapping);
+            return castToJavaBean((Map<String, Object>) obj, clazz, mapping, features);
         }
 
         if (clazz.isArray()) {
@@ -651,7 +692,7 @@ public class TypeUtils {
                 } else {
                     return (T) Enum.valueOf((Class<? extends Enum>) clazz, name);
                 }
-            } else if (obj instanceof Number) {
+            } else if (obj instanceof Integer || obj instanceof Long) {
                 int ordinal = ((Number) obj).intValue();
                 Object[] values = clazz.getEnumConstants();
                 if (ordinal < values.length) {
@@ -672,7 +713,7 @@ public class TypeUtils {
         }
 
         if (type instanceof Class) {
-            return (T) cast(obj, (Class<T>) type, mapping);
+            return (T) cast(obj, (Class<T>) type, mapping, 0);
         }
 
         if (type instanceof ParameterizedType) {
@@ -698,6 +739,37 @@ public class TypeUtils {
     public static final <T> T cast(Object obj, ParameterizedType type, ParserConfig mapping) {
         Type rawTye = type.getRawType();
 
+        if (rawTye == List.class //
+                || rawTye == ArrayList.class) {
+            Type itemType = type.getActualTypeArguments()[0];
+
+            if (obj instanceof List) {
+                List listObj = (List) obj;
+
+                int listObjSize = listObj.size();
+                ArrayList arrayList = new ArrayList(listObjSize);
+
+                for (int i = 0; i < listObjSize; i++) {
+                    Object item = listObj.get(i);
+
+                    Object itemValue;
+                    if (itemType instanceof Class) {
+                        if (item != null && item.getClass() == JSONObject.class) {
+                            itemValue = ((JSONObject) item).toJavaObject((Class<T>) itemType, mapping, 0);
+                        } else {
+                            itemValue = cast(item, (Class<T>) itemType, mapping, 0);
+                        }
+                    } else {
+                        itemValue = cast(item, itemType, mapping);
+                    }
+
+                    arrayList.add(itemValue);
+                }
+
+                return (T) arrayList;
+            }
+        }
+
         if (rawTye == Set.class 
                 || rawTye == HashSet.class //
                 ||  rawTye == TreeSet.class //
@@ -717,7 +789,19 @@ public class TypeUtils {
                 
                 for (Iterator it = ((Iterable) obj).iterator(); it.hasNext();) {
                     Object item = it.next();
-                    collection.add(cast(item, itemType, mapping));
+
+                    Object itemValue;
+                    if (itemType instanceof Class) {
+                        if (item != null && item.getClass() == JSONObject.class) {
+                            itemValue = ((JSONObject) item).toJavaObject((Class<T>) itemType, mapping, 0);
+                        } else {
+                            itemValue = cast(item, (Class<T>) itemType, mapping, 0);
+                        }
+                    } else {
+                        itemValue = cast(item, itemType, mapping);
+                    }
+
+                    collection.add(itemValue);
                 }
 
                 return (T) collection;
@@ -760,8 +844,12 @@ public class TypeUtils {
         throw new JSONException("can not cast to : " + type);
     }
 
-    @SuppressWarnings({ "unchecked" })
     public static final <T> T castToJavaBean(Map<String, Object> map, Class<T> clazz, ParserConfig config) {
+        return castToJavaBean(map, clazz, config, 0);
+    }
+
+    @SuppressWarnings({ "unchecked" })
+    public static final <T> T castToJavaBean(Map<String, Object> map, Class<T> clazz, ParserConfig config, int features) {
         try {
             if (clazz == StackTraceElement.class) {
                 String declaringClass = (String) map.get("className");
@@ -772,6 +860,8 @@ public class TypeUtils {
                     Number value = (Number) map.get("lineNumber");
                     if (value == null) {
                         lineNumber = 0;
+                    } else if (value instanceof BigDecimal) {
+                        lineNumber = ((BigDecimal) value).intValueExact();
                     } else {
                         lineNumber = value.intValue();
                     }
@@ -785,14 +875,18 @@ public class TypeUtils {
                 if (iClassObject instanceof String) {
                     String className = (String) iClassObject;
 
-                    Class<?> loadClazz = (Class<T>) loadClass(className, null);
+                    if (config == null) {
+                        config = ParserConfig.global;
+                    }
+
+                    Class<?> loadClazz = (Class<T>) config.checkAutoType(className, null, features);
 
                     if (loadClazz == null) {
                         throw new ClassNotFoundException(className + " not found");
                     }
 
                     if (!loadClazz.equals(clazz)) {
-                        return (T) castToJavaBean(map, loadClazz, config);
+                        return (T) castToJavaBean(map, loadClazz, config, features);
                     }
                 }
             }
@@ -844,7 +938,8 @@ public class TypeUtils {
         }
     }
 
-    private static ConcurrentMap<String, Class<?>> mappings = new ConcurrentHashMap<String, Class<?>>();
+    private final static ConcurrentMap<String, Class<?>> mappings = new ConcurrentHashMap<String, Class<?>>(36, 0.75f, 1);
+
     static {
         mappings.put("byte", byte.class);
         mappings.put("short", short.class);
@@ -873,10 +968,25 @@ public class TypeUtils {
         mappings.put("[C", char[].class);
         mappings.put("[Z", boolean[].class);
 
-        mappings.put(HashMap.class.getName(), HashMap.class);
+        mappings.put("java.util.HashMap", HashMap.class);
+        mappings.put("java.util.TreeMap", TreeMap.class);
+        mappings.put("java.util.Date", java.util.Date.class);
+        mappings.put("com.alibaba.fastjson.JSONObject", JSONObject.class);
+        mappings.put("java.util.concurrent.ConcurrentHashMap", ConcurrentHashMap.class);
+        mappings.put("java.text.SimpleDateFormat", SimpleDateFormat.class);
+        mappings.put("java.lang.StackTraceElement", java.lang.StackTraceElement.class);
+        mappings.put("java.lang.RuntimeException", RuntimeException.class);
+    }
+
+    public static Class<?> getClassFromMapping(String className){
+        return mappings.get(className);
     }
 
     public static Class<?> loadClass(String className, ClassLoader classLoader) {
+        return loadClass(className, classLoader, false);
+    }
+
+    public static Class<?> loadClass(String className, ClassLoader classLoader, boolean cache) {
         if (className == null || className.length() == 0) {
             return null;
         }
@@ -892,25 +1002,30 @@ public class TypeUtils {
         }
 
         if (className.charAt(0) == '[') {
-            Class<?> componentType = loadClass(className.substring(1), classLoader);
+            Class<?> componentType = loadClass(className.substring(1), classLoader, false);
+            if (componentType == null) {
+                return null;
+            }
             return Array.newInstance(componentType, 0).getClass();
         }
 
         if (className.startsWith("L") && className.endsWith(";")) {
             String newClassName = className.substring(1, className.length() - 1);
-            return loadClass(newClassName, classLoader);
+            return loadClass(newClassName, classLoader, false);
         }
         
         try {
             if (classLoader != null) {
                 clazz = classLoader.loadClass(className);
 
-                mappings.put(className, clazz);
+                if (cache) {
+                    mappings.put(className, clazz);
+                }
 
                 return clazz;
             }
         } catch (Exception e) {
-            e.printStackTrace();
+//            e.printStackTrace();
             // skip
         }
 
@@ -920,12 +1035,14 @@ public class TypeUtils {
             if (contextClassLoader != null && contextClassLoader != classLoader) {
                 clazz = contextClassLoader.loadClass(className);
 
-                mappings.put(className, clazz);
+                if (cache) {
+                    mappings.put(className, clazz);
+                }
 
                 return clazz;
             }
         } catch (Exception e) {
-            e.printStackTrace();
+//            e.printStackTrace();
             // skip
         }
 
@@ -936,7 +1053,7 @@ public class TypeUtils {
 
             return clazz;
         } catch (Exception e) {
-            e.printStackTrace();
+//            e.printStackTrace();
             // skip
         }
 
@@ -1058,6 +1175,7 @@ public class TypeUtils {
                     }
                 }
 
+                boolean fieldAnnotationExists = false;
                 if (annotation != null) {
                     if (!annotation.serialize()) {
                         continue;
@@ -1068,6 +1186,7 @@ public class TypeUtils {
 
                     if (annotation.name().length() != 0) {
                         String propertyName = annotation.name();
+                        fieldAnnotationExists = true;
 
                         if (aliasMap != null) {
                             propertyName = aliasMap.get(propertyName);
@@ -1128,6 +1247,7 @@ public class TypeUtils {
 
                             if (fieldAnnotation.name().length() != 0) {
                                 propertyName = fieldAnnotation.name();
+                                fieldAnnotationExists = true;
 
                                 if (aliasMap != null) {
                                     propertyName = aliasMap.get(propertyName);
@@ -1139,7 +1259,7 @@ public class TypeUtils {
                         }
                     }
                     
-                    if (propertyNamingStrategy != null) {
+                    if (propertyNamingStrategy != null && !fieldAnnotationExists) {
                         propertyName = propertyNamingStrategy.translate(propertyName);
                     }
 
@@ -1651,7 +1771,137 @@ public class TypeUtils {
         return changed;
     }
 
+    public static double parseDouble(String str) {
+        final int len = str.length();
+        if (len > 10) {
+            return Double.parseDouble(str);
+        }
+
+        boolean negative = false;
+
+        long longValue = 0;
+        int scale = 0;
+        for (int i = 0; i < len; ++i) {
+            char ch = str.charAt(i);
+            if (ch == '-' && i == 0) {
+                negative = true;
+                continue;
+            }
+
+            if (ch == '.') {
+                if (scale != 0) {
+                    return Double.parseDouble(str);
+                }
+                scale = len - i - 1;
+                continue;
+            }
+
+            if (ch >= '0' && ch <= '9') {
+                int digit = ch - '0';
+                longValue = longValue * 10 + digit;
+            } else {
+                return Double.parseDouble(str);
+            }
+        }
+
+        if (negative) {
+            longValue = -longValue;
+        }
+
+        switch (scale) {
+            case 0:
+                return (double) longValue;
+            case 1:
+                return ((double) longValue) / 10;
+            case 2:
+                return ((double) longValue) / 100;
+            case 3:
+                return ((double) longValue) / 1000;
+            case 4:
+                return ((double) longValue) / 10000;
+            case 5:
+                return ((double) longValue) / 100000;
+            case 6:
+                return ((double) longValue) / 1000000;
+            case 7:
+                return ((double) longValue) / 10000000;
+            case 8:
+                return ((double) longValue) / 100000000;
+            case 9:
+                return ((double) longValue) / 1000000000;
+        }
+
+        return Double.parseDouble(str);
+    }
+
+    public static float parseFloat(String str) {
+        final int len = str.length();
+        if (len >= 10) {
+            return Float.parseFloat(str);
+        }
+
+        boolean negative = false;
+
+        long longValue = 0;
+        int scale = 0;
+        for (int i = 0; i < len; ++i) {
+            char ch = str.charAt(i);
+            if (ch == '-' && i == 0) {
+                negative = true;
+                continue;
+            }
+
+            if (ch == '.') {
+                if (scale != 0) {
+                    return Float.parseFloat(str);
+                }
+                scale = len - i - 1;
+                continue;
+            }
+
+            if (ch >= '0' && ch <= '9') {
+                int digit = ch - '0';
+                longValue = longValue * 10 + digit;
+            } else {
+                return Float.parseFloat(str);
+            }
+        }
+
+        if (negative) {
+            longValue = -longValue;
+        }
+
+        switch (scale) {
+            case 0:
+                return (float) longValue;
+            case 1:
+                return ((float) longValue) / 10;
+            case 2:
+                return ((float) longValue) / 100;
+            case 3:
+                return ((float) longValue) / 1000;
+            case 4:
+                return ((float) longValue) / 10000;
+            case 5:
+                return ((float) longValue) / 100000;
+            case 6:
+                return ((float) longValue) / 1000000;
+            case 7:
+                return ((float) longValue) / 10000000;
+            case 8:
+                return ((float) longValue) / 100000000;
+            case 9:
+                return ((float) longValue) / 1000000000;
+        }
+
+        return Float.parseFloat(str);
+    }
+
     public static long fnv_64_lower(String key) {
+        if (key == null) {
+            return 0L;
+        }
+
         long hashCode = 0xcbf29ce484222325L;
         for (int i = 0; i < key.length(); ++i) {
             char ch = key.charAt(i);
@@ -1668,6 +1918,50 @@ public class TypeUtils {
         }
 
         return hashCode;
+    }
+
+    public static void addMapping(String className, Class<?> clazz) {
+        mappings.put(className, clazz);
+    }
+
+    public static Type checkPrimitiveArray(GenericArrayType genericArrayType) {
+        Type clz = genericArrayType;
+        Type genericComponentType  = genericArrayType.getGenericComponentType();
+
+        String prefix = "[";
+        while (genericComponentType instanceof GenericArrayType) {
+            genericComponentType = ((GenericArrayType) genericComponentType)
+                    .getGenericComponentType();
+            prefix += prefix;
+        }
+
+        if (genericComponentType instanceof Class<?>) {
+            Class<?> ck = (Class<?>) genericComponentType;
+            if (ck.isPrimitive()) {
+                try {
+                    if (ck == boolean.class) {
+                        clz = Class.forName(prefix + "Z");
+                    } else if (ck == char.class) {
+                        clz = Class.forName(prefix + "C");
+                    } else if (ck == byte.class) {
+                        clz = Class.forName(prefix + "B");
+                    } else if (ck == short.class) {
+                        clz = Class.forName(prefix + "S");
+                    } else if (ck == int.class) {
+                        clz = Class.forName(prefix + "I");
+                    } else if (ck == long.class) {
+                        clz = Class.forName(prefix + "J");
+                    } else if (ck == float.class) {
+                        clz = Class.forName(prefix + "F");
+                    } else if (ck == double.class) {
+                        clz = Class.forName(prefix + "D");
+                    }
+                } catch (ClassNotFoundException e) {
+                }
+            }
+        }
+
+        return clz;
     }
 
 //    public static long fnv_hash(char[] chars) {
